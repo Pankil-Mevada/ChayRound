@@ -28,6 +28,9 @@ in PROJECT_STATUS.md and docs/PHASE_1_2_ACCEPTANCE.md.
 
 ## Primary references
 
+See [Owner-approved office browsers](DEVICE_APPROVAL.md) for the current simpler
+onboarding, tenant scoping, capability grants and revocation tradeoffs.
+
 - [Crow routing and HTTP framework](https://crowcpp.org/master/)
 - [SQLite transactions and single-writer semantics](https://www.sqlite.org/lang_transaction.html)
 - [OpenSSL PBKDF2 API](https://docs.openssl.org/3.6/man3/PKCS5_PBKDF2_HMAC/)

@@ -1,5 +1,10 @@
 # Phase 1/2 operations and provider configuration
 
+Default office access now uses stall discovery plus owner-approved remembered
+browsers. Offices need no email code/PIN/private link; see OFFICE_ACCESS.md.
+Email setup below is still required for owner verification and optional legacy
+office-email workflows. Owner-approved access does not change payment verification.
+
 ## What is ready to test
 
 The application implements verified-email onboarding, office access, ordering,
@@ -13,6 +18,9 @@ changing that check. Merchant onboarding, settlement ownership, security/release
 review and a controlled pilot are prerequisites for a separate live release.
 
 ## Configure real email delivery
+
+Prefer [private terminal setup](PRIVATE_EMAIL_SETUP.md) to enter the key through
+hidden prompts without putting it in shell history, chat or a persistent file.
 
 Create a transactional email account with Resend and verify a sender domain.
 Keep its API key in a local ignored environment file, not in chat or Git. Configure:
@@ -120,6 +128,14 @@ See [Razorpay idempotent refund contract](https://github.com/razorpay/markdown-d
   fields and tax rules need business/accounting configuration before tax-invoice claims.
 
 ## Operator checks and recovery
+
+For office access, `Office PIN required or incorrect` means the owner-configured
+PIN must be supplied (not an email code). The owner can edit the office to remove
+or replace its PIN. `Office link invalid or revoked` requires the current link;
+replacing the link invalidates earlier copies. Valid link/PIN authentication allows
+office email onboarding before the contact is verified, but placing orders still
+requires verification. Restart the supervisor after backend updates; refresh the
+browser for frontend changes. Do not ask users to share private links or PINs.
 
 1. Inspect /health on all three services. Merchant/Order health queries depend on
    their schema; Gateway health alone proves only Gateway liveness.

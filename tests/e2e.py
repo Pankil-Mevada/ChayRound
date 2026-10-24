@@ -134,10 +134,13 @@ def main():
             expect(400,'/api/menu',owner=a,data={'name':'Fractional','price_paise':1.5})
             office=expect(201,'/api/offices',owner=a,data={'name':'ABC','email':'office@example.test','address':'Second floor','area':'Test Area','policy':'MONTHLY','credit_limit_paise':10000})
             token,oid=office['office_token'],office['id']
+            check(not expect(200,'/api/office',office=token)['verified'],
+                  'A valid link without PIN opens before email verification')
             expect(403,'/api/orders',office=token,key='unverified-office',data={'items':[{'item_id':first,'quantity':1}]})
             verify('office@example.test',office=token)
             expect(401,'/internal/office',data={},url=env['CHAY_MERCHANT_URL'])
-            expect(401,'/api/office',office='0'*64)
+            check(expect(401,'/api/office',office='0'*64)['error']=='Office link invalid or revoked',
+                  'Invalid link has a specific public error')
             expect(404,f'/api/accounts/{oid}',owner=b)
             expect(409,'/api/orders',office=token,key='foreign-menu-item',data={'item_id':foreign,'quantity':1})
             payload={'items':[{'item_id':first,'quantity':2},{'item_id':second,'quantity':1}],'total_paise':1,'office_id':999,'stall_id':999}
@@ -200,7 +203,12 @@ def main():
             expect(200,f'/api/offices/{oid}',owner=a,data=edit)
             # Address eligibility and PIN access.
             gated=expect(201,'/api/offices',owner=a,data={'name':'PIN office','email':'pin@example.test','address':'Third floor','area':'Elsewhere','pin':'123456'})
-            expect(401,'/api/office',office=gated['office_token'])
+            check(expect(401,'/api/office',office=gated['office_token'])['error']=='Office PIN required or incorrect',
+                  'Missing PIN is explained without implying email verification failed')
+            check(expect(401,'/api/office',office=gated['office_token'],pin='0000')['error']=='Office PIN required or incorrect',
+                  'Incorrect PIN has the same specific error as missing PIN')
+            check(not expect(200,'/api/office',office=gated['office_token'],pin='123456')['verified'],
+                  'Correct PIN opens office onboarding before email verification')
             verify('pin@example.test',office=gated['office_token'],pin='123456')
             expect(409,'/api/orders',office=gated['office_token'],pin='123456',key='wrong-service-area',data={'item_id':first,'quantity':1})
             # Prepaid: no browser assertion alone can confirm a capture.
@@ -317,6 +325,39 @@ def main():
             check(wait_settlement('REFUNDED')['status']=='CANCELLED','Worker processes durable refund recovery')
             stop('order');start('order')
             # No duplicate legacy migration charges on restart.
+            # Discoverable stalls and owner-approved browser access, no office email/PIN.
+            a,b=login(0),login(1)  # The earlier controlled-clock scenarios advance past session expiry.
+            directory=expect(200,'/api/stalls')['stalls']
+            check(len(directory)==2 and all(set(s)=={'id','name','area'} for s in directory),
+                  'Public directory exposes only stall identity and area')
+            easy=expect(201,'/api/offices',owner=a,data={'name':'Easy Office','address':'Sixth floor','area':'Test Area','policy':'MONTHLY','credit_limit_paise':10000})
+            access=expect(201,'/api/access/request',data={'stall_id':1,'office_name':'Easy Office'})
+            device=access['device_token']
+            check(expect(200,'/api/access',office=device)['status']=='PENDING','New browser waits for owner approval')
+            expect(401,'/api/office',office=device)
+            expect(401,'/api/orders',office=device,key='pending-device',data={'item_id':first,'quantity':1})
+            expect(401,'/api/access/requests')
+            queue=expect(200,'/api/access/requests',owner=a)['requests']
+            rid=next(r['id'] for r in queue if r['office_name']=='Easy Office')
+            expect(404,'/api/access/requests/'+rid,owner=b,data={'status':'APPROVED','office_id':easy['id']})
+            expect(404,'/api/access/requests/'+rid,owner=a,data={'status':'APPROVED','office_id':999999})
+            foreign_office=expect(201,'/api/offices',owner=b,data={'name':'Foreign office','address':'Other floor','area':'Test Area'})
+            expect(404,'/api/access/requests/'+rid,owner=a,data={'status':'APPROVED','office_id':foreign_office['id']})
+            expect(200,'/api/access/requests/'+rid,owner=a,data={'status':'APPROVED','office_id':easy['id']})
+            connected=expect(200,'/api/office',office=device)
+            check(connected['owner_approved'] and connected['verified'] and not connected['email_verified'] and connected['email']=='',
+                  'Owner approval is separate from email verification and needs no email')
+            easy_order=order(device,[{'item_id':first,'quantity':1}],'approved-device-order')
+            check(easy_order['office_id']==easy['id'],'Approved browser derives its assigned office server-side')
+            stop('merchant');start('merchant')
+            check(expect(200,'/api/access',office=device)['status']=='APPROVED','Browser approval survives restart')
+            expect(200,'/api/access/requests/'+rid,owner=a,data={'status':'REVOKED'})
+            expect(401,'/api/office',office=device)
+            expect(401,'/api/account',office=device)
+            expect(401,'/api/orders',office=device,key='revoked-device',data={'item_id':first,'quantity':1})
+            expect(409,'/api/access/requests/'+rid,owner=a,data={'status':'APPROVED','office_id':easy['id']})
+            expect(404,'/api/access/request',data={'stall_id':999999,'office_name':'Invalid stall'})
+            expect(200,'/portal.js')
             with sqlite3.connect(data/'order.db') as db:
                 check(db.execute("SELECT COUNT(*) FROM ledger WHERE id LIKE 'legacy_%'").fetchone()[0]==0,'Migration does not duplicate new charges')
                 for table in ('ledger','allocations','invoices','audit'):

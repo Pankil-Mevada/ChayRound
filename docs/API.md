@@ -1,5 +1,14 @@
 # HTTP API: Phases 1/2
 
+Default onboarding now uses [owner-approved browsers](OFFICE_ACCESS.md).
+GET /api/stalls lists public stall identity/area. POST /api/access/request accepts
+stall_id and office_name, returning a pending device_token. GET /api/access uses
+X-Office-Token to read its status. GET /api/access/requests is owner-only;
+POST /api/access/requests/{id} accepts status APPROVED plus an owned office_id,
+or REVOKED. Approved tokens authenticate existing office/order/account routes.
+Office email is optional; owner_approved and email_verified are separate facts.
+Legacy verified is their OR; no email verification is fabricated by approval.
+
 Gateway: localhost:9180. JSON bodies; money in integer paise. Owner requests use
 Authorization: Bearer <session>. Office requests use X-Office-Token and optional
 X-Office-Pin. Private browser links use /#office=<token>, avoiding query-string

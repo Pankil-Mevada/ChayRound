@@ -3,6 +3,7 @@ import os
 import pathlib
 import secrets
 import subprocess
+import sys
 import time
 import urllib.request
 import fcntl
@@ -14,7 +15,11 @@ def main():
     data.mkdir(exist_ok=True)
     data.chmod(0o700)
     lock = open(data / 'stack.lock','a')
-    fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    try:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock.close()
+        sys.exit('ChayRound is already running for this data directory. Stop its launcher with Ctrl+C, then retry. Do not delete stack.lock.')
     secret_file=data / 'internal.key'
     if not secret_file.exists():
         secret_file.write_text(secrets.token_hex(32))
@@ -32,6 +37,11 @@ def main():
             log = open(data / f'{name}.log', 'a')
             logs.append(log)
             child_env = dict(env, PORT=str(port), CHAY_DB=str(data / f'{name}.db'))
+            if name != 'merchant':
+                child_env.pop('CHAY_EMAIL_API_KEY', None)
+                child_env.pop('CHAY_EMAIL_FROM', None)
+            if name != 'order':
+                child_env.pop('CHAY_RAZORPAY_ACCOUNTS_FILE', None)
             p = subprocess.Popen([str(ROOT / 'build' / name)], env=child_env,
                                  cwd=ROOT, stdout=log, stderr=log)
             processes.append(p)

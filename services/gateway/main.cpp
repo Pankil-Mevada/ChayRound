@@ -26,14 +26,14 @@ int main() {
         return r;
     });
     CROW_ROUTE(app, "/<string>")([](std::string name) {
-        if (name != "app.js" && name != "styles.css")
+        if (name != "app.js" && name != "portal.js" && name != "styles.css")
             return crow::response(404);
         std::ifstream f(env("CHAY_FRONTEND", "frontend") + "/" + name);
         if (!f)
             return crow::response(503, "Asset unavailable");
         std::string source((std::istreambuf_iterator<char>(f)), {});
         crow::response response(200, source);
-        response.set_header("Content-Type", name == "app.js"
+        response.set_header("Content-Type", name != "styles.css"
                                                 ? "application/javascript; charset=utf-8"
                                                 : "text/css; charset=utf-8");
         response.set_header("Cache-Control", "no-store");

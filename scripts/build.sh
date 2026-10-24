@@ -10,3 +10,4 @@ cmake --build build -j "${BUILD_JOBS:-1}"
 ctest --test-dir build --output-on-failure
 python3 tests/e2e.py
 python3 tests/migration_test.py
+python3 tests/private_email_start_test.py

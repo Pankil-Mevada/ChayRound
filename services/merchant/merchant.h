@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS rate_limits(key TEXT PRIMARY KEY,start INTEGER NOT NU
     for (auto name : {"email", "address", "area", "instructions", "pin_hash", "pin_salt"})
         column(d, "offices", name, "TEXT NOT NULL DEFAULT ''");
     column(d, "offices", "verified", "INTEGER NOT NULL DEFAULT 0");
+    column(d, "offices", "owner_approved", "INTEGER NOT NULL DEFAULT 0");
+    d.exec("CREATE TABLE IF NOT EXISTS office_devices(id TEXT PRIMARY KEY,token_hash TEXT UNIQUE NOT NULL,stall_id INTEGER NOT NULL REFERENCES stalls(id),office_name TEXT NOT NULL,office_id INTEGER REFERENCES offices(id),status TEXT NOT NULL DEFAULT 'PENDING',created INTEGER NOT NULL);");
     column(d, "offices", "service_enabled", "INTEGER NOT NULL DEFAULT 1");
     column(d, "offices", "credit_enabled", "INTEGER NOT NULL DEFAULT 1");
     column(d, "offices", "version", "INTEGER NOT NULL DEFAULT 1");
@@ -74,7 +76,12 @@ inline long long officeId(Db &d, const crow::request &r) {
     require(key.size() == 64, 401, "Private office link required");
     Stmt s(d, "SELECT id,pin_hash,pin_salt FROM offices WHERE token_hash=?");
     s.bind(1, digest(key));
-    require(s.row(), 401, "Office link invalid or revoked");
+    if (!s.row()) {
+        Stmt device(d, "SELECT office_id FROM office_devices WHERE token_hash=? AND status='APPROVED'");
+        device.bind(1, digest(key));
+        require(device.row(), 401, "Office link invalid or revoked");
+        return device.num(0);
+    }
     if (!s.str(1).empty()) {
         auto pin = r.get_header_value("X-Office-Pin");
         require(pin.size() >= 4 && pin.size() <= 8 && equal(password(pin, s.str(2)), s.str(1)), 401,
@@ -109,7 +116,7 @@ inline Json officeInfo(Db &d, long long oid) {
     Stmt s(d, "SELECT "
               "o.stall_id,o.name,o.policy,o.credit_limit,o.email,o.address,o.area,o.instructions,o."
               "verified,o.service_enabled,o.credit_enabled,o.version,s.name,s.area,s.paused,s."
-              "opens,s.closes,s.days,u.verified FROM offices o JOIN stalls s ON s.id=o.stall_id "
+              "opens,s.closes,s.days,u.verified,o.owner_approved FROM offices o JOIN stalls s ON s.id=o.stall_id "
               "JOIN owners u ON u.id=s.owner_id WHERE o.id=?");
     s.bind(1, oid);
     require(s.row(), 404, "Office missing");
@@ -123,7 +130,9 @@ inline Json officeInfo(Db &d, long long oid) {
     j["address"] = s.str(5);
     j["area"] = s.str(6);
     j["instructions"] = s.str(7);
-    j["verified"] = bool(s.num(8));
+    j["verified"] = bool(s.num(8) || s.num(19));
+    j["email_verified"] = bool(s.num(8));
+    j["owner_approved"] = bool(s.num(19));
     j["service_enabled"] = bool(s.num(9));
     j["credit_enabled"] = bool(s.num(10));
     j["version"] = s.num(11);

@@ -74,9 +74,23 @@ inline crow::json::rvalue merchant(const std::string &url, const crow::request &
                        "Authorization: " + r.get_header_value("Authorization"),
                        "X-Office-Token: " + r.get_header_value("X-Office-Token"),
                        "X-Office-Pin: " + r.get_header_value("X-Office-Pin")});
-    require(reply.status == 200, reply.status >= 500 ? 503 : static_cast<int>(reply.status),
-            reply.status >= 500 ? "Merchant service unavailable"
-                                : "Access denied or contact not verified");
+    if (reply.status != 200) {
+        std::string message = reply.status >= 500 ? "Merchant service unavailable"
+                                                 : "Access denied or contact not verified";
+        // Forward only known public instructions, never arbitrary dependency bodies.
+        auto error = crow::json::load(reply.body);
+        if (reply.status < 500 && error && error.has("error") &&
+            error["error"].t() == crow::json::type::String) {
+            std::string detail = error["error"].s();
+            for (const auto *safe : {"Private office link required", "Office link invalid or revoked",
+                                     "Office PIN required or incorrect", "Sign in required",
+                                     "Session expired", "Verify your owner email first"}) {
+                if (detail == safe)
+                    message = detail;
+            }
+        }
+        throw Failure{reply.status >= 500 ? 503 : static_cast<int>(reply.status), message};
+    }
     auto j = crow::json::load(reply.body);
     require(bool(j), 503, "Invalid merchant response");
     return j;

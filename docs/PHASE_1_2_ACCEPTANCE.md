@@ -1,5 +1,10 @@
 # Phase 1/2 acceptance: engineering versus external validation
 
+Product change: default office onboarding now uses stall discovery and owner-approved
+remembered browser access instead of office email/PIN/private links. Owner email
+verification is unchanged. See OFFICE_ACCESS.md; older office-verification/private-link
+rows below describe the retained legacy flow. Real owner/device trials remain open.
+
 Updated: 24 October 2026. No feature is marked commercially accepted from local
 fixtures alone. The earlier roadmap includes actual-device testing and a real paid
 pilot, which cannot be manufactured through code changes.

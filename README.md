@@ -8,7 +8,8 @@ release. Build the product and study its design together.
 
 - Register/sign in as an owner and create menu items.
 - Create an office with prepaid or monthly terms and a credit limit.
-- Open a private office link without daily login; place monthly-credit orders.
+- Find the stall, request owner approval once per browser and place tea orders.
+- Office access is remembered without email codes, daily login or private links.
 - Seller accepts, prepares, fulfils, or cancels eligible orders.
 - Verified email contacts, addresses, optional office PINs, hours and availability.
 - Multi-item baskets, append-only ledger, partial receipts, reversals and statements.
@@ -47,18 +48,29 @@ prefix. The current dependency reuse is an explicit portability limitation.
 
 ## Try the product
 
-1. Configure email and Razorpay Test credentials locally; see docs/OPERATIONS.md.
-2. Register, sign in, request a code and verify the owner email.
-3. Set service area/hours, unpause ordering and add menu items.
-4. Add ABC Office with its address/email/area, select monthly credit or prepaid,
-   set its credit limit, and optionally set a PIN.
-5. Share the private link and verify the office email once. No daily login needed.
-6. Place a basket. Prepaid requests need Pay / resume checkout and captured payment.
-7. Accept -> Ready -> Fulfilled. Monthly fulfilment creates an account charge.
-8. Open Account & statements, record confirmed CASH/BANK receipts, and inspect the
-   matching office balance. Issue statements for closed calendar months.
+The default customer flow is now **find stall -> enter office name -> owner
+approves this browser -> order**. Offices need no email code, PIN or private link.
+Return visits on that browser remember access. Owners use `/#owner`, save an
+office's address/terms, then approve its browser request under **Office access**.
+See [simple office ordering](docs/OFFICE_ACCESS.md) for current steps and limits.
+The steps below describe this default workflow; legacy link APIs remain available.
 
-Links are bearer capabilities: anyone with a link can use that office's portal.
+1. Open `/#owner`, register/sign in and verify the owner email.
+2. Set service area/hours, unpause ordering and add tea items/prices.
+3. Save an office with its name/address, matching area and credit/prepaid terms.
+   No office email or PIN is required.
+4. In a separate customer browser/profile, open `/`, find the stall and enter the
+   office name. Send an access request.
+5. In the owner window, confirm the requester, select the saved office under
+   **Office access** and approve the browser.
+6. The customer page opens its menu. Return visits on the same browser remember
+   access. Monthly orders use approved credit; prepaid orders need Razorpay Test
+   account configuration and captured payment.
+7. Accept -> Ready -> Fulfilled. Monthly fulfilment creates an account charge.
+8. Open Account & statements to record confirmed CASH/BANK receipts and inspect
+   balances. Remove a browser's access from the owner queue if needed.
+
+Legacy links are bearer capabilities: anyone with a link can use that office's portal.
 Rotating a link invalidates the old one. Links use a URL fragment and tokens
 travel in a header, reducing URL-log exposure. Owner sessions are stored in
 sessionStorage for this prototype; production needs stronger browser/session

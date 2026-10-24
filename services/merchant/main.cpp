@@ -1,4 +1,5 @@
 #include "merchant.h"
+#include "portal.h"
 using namespace cr;
 using namespace merchant;
 int main() {
@@ -8,6 +9,7 @@ int main() {
     migrate();
     crow::SimpleApp app;
     verification(app);
+    portal(app);
     CROW_ROUTE(app, "/health")([] {
         return handle([] {
             Db d(path);
@@ -183,10 +185,11 @@ int main() {
     CROW_ROUTE(app, "/api/offices").methods("POST"_method)([](const crow::request &r) {
         return handle([&] {
             auto j = body(r);
-            auto name = text(j, "name"), email = emailAddress(text(j, "email", 200)),
+            auto name = text(j, "name"), email = optionalText(j, "email", 200),
                  address = text(j, "address", 400), area = text(j, "area"),
                  instructions = optionalText(j, "instructions"),
                  policy = j.has("policy") ? text(j, "policy") : "PREPAID";
+            if (!email.empty()) email = emailAddress(email);
             require(policy == "PREPAID" || policy == "MONTHLY", 400, "Invalid policy");
             auto limit =
                 j.has("credit_limit_paise") ? integer(j, "credit_limit_paise", 0, 100000000) : 0;
@@ -223,10 +226,11 @@ int main() {
         .methods("POST"_method)([](const crow::request &r, int id) {
             return handle([&] {
                 auto j = body(r);
-                auto name = text(j, "name"), email = emailAddress(text(j, "email", 200)),
+                auto name = text(j, "name"), email = optionalText(j, "email", 200),
                      address = text(j, "address", 400), area = text(j, "area"),
                      instructions = optionalText(j, "instructions"), policy = text(j, "policy"),
                      reason = text(j, "reason", 300);
+                if (!email.empty()) email = emailAddress(email);
                 require(policy == "PREPAID" || policy == "MONTHLY", 400, "Invalid policy");
                 auto limit = integer(j, "credit_limit_paise", 0, 100000000),
                      version = integer(j, "version", 1, 1000000);
