@@ -33,10 +33,12 @@
     return an error. A future cache needs explicit stale-access semantics.
 11. **Where is the event bus?** None. Atomic local events are stored; publication,
     consumer deduplication and outbox leasing are future work.
-12. **What happens to prepaid orders?** Rejected before insertion. A fake success
-    or unverified screenshot would violate the product's financial invariant.
-13. **How do invoices affect balance?** Future invoice groups charges, not a second
-    debit. Explain partial allocations and reconciliation; not implemented yet.
+12. **What happens to prepaid orders?** They await Test provider setup/capture.
+    Missing credentials fail closed. Signature plus canonical fetch is required;
+    screenshots and browser success are not authoritative. Explain late capture.
+13. **How do invoices affect balance?** The issued statement groups charges, not a second
+    debit. Show partial allocations, immutable statement lines and reconciliation
+    in order/billing.h and repository.h.
 14. **What fails at ten times traffic?** Measure SQLite write waits, HTTP worker
     saturation and password CPU first; discuss PostgreSQL/per-office locking.
 15. **Is HTTP stateless enough for scaling?** Services persist local files; multi-node

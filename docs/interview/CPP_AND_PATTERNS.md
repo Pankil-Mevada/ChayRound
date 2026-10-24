@@ -64,17 +64,19 @@ class implementation. Avoid a factory/singleton hierarchy without a need.
 - Commitment SUM is O(k) matching unpaid order rows with an office index. At larger
   history sizes, a transactionally maintained account row can bound lookup work,
   with reconciliation to detect drift.
-- Latest-order query uses a stall/time index but no cursor pagination yet.
+- Order/ledger lists now use rowid keyset cursors; test equal-time ordering and
+  inspect query plans before claiming a particular index provides the full plan.
 - Password derivation dominates login CPU; rate limiting and calibrated work
   factors matter more than micro-optimising a string copy.
-- CREATE TABLE IF NOT EXISTS initializes new DBs but is not schema migration
-  versioning. Design migrations and rollback/restore before real deployment.
+- Additive schema migration now uses table introspection and user_version. A
+  one-time import preserves old fulfilled charges without replaying it on restart.
+  Offline backup/restore exists; online/destructive migrations need further design.
 
 ## Exercises
 
 1. Extract PlaceOrder without breaking tests; identify its inputs and authority.
 2. Add a MoneyPaise type and demonstrate a prevented unit error.
-3. Add cursor pagination and test equal timestamps without missing/duplicate rows.
+3. Extend cursor-pagination tests to large multi-tenant histories.
 4. Replace generic DB exceptions with typed busy/constraint/unavailable errors.
 5. Make a failed dependency test deterministic via an injected client.
-6. Add cancelled-order credit-release regression coverage before changing policy.
+6. Inspect cancelled-credit, partial-payment and receipt-reversal tests before changing policy.

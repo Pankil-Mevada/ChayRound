@@ -20,6 +20,12 @@ For each future feature add: product reason, invariant, design alternatives,
 chosen code locations, test evidence, operational risks and an interview prompt.
 Do not describe a planned broker, cache or ledger as implemented.
 
+Phase 1/2 now includes the ledger and payment adapter. Read
+[Financial workflows and recovery](FINANCIAL_WORKFLOWS.md) for current code anchors,
+partial-payment examples, compensation, provider idempotency and durable worker
+design. Earlier study examples are conceptual; current implementation status is
+in PROJECT_STATUS.md and docs/PHASE_1_2_ACCEPTANCE.md.
+
 ## Primary references
 
 - [Crow routing and HTTP framework](https://crowcpp.org/master/)

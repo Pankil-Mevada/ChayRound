@@ -8,9 +8,10 @@ no duplicate request charges, no overspent credit, recoverable persisted state.
 Ask about office-paid versus employee-paid orders, delivery responsibility,
 refunds, daily peak windows, geographical scope, retention and availability goals.
 
-Current scope is one item per request and unpaid monthly-credit ordering. A
-commercial ledger, prepaid processing and verified office contacts remain future
-work. Do not blur those boundaries in the interview.
+Current code includes multi-item baskets, verified-email contacts, an append-only
+ledger, statements, receipts, and a Razorpay Test adapter with recovery. Actual
+provider/device acceptance and a paid pilot remain unverified. Read
+FINANCIAL_WORKFLOWS.md for the detailed current implementation.
 
 ## 2. Make explicit estimates
 
@@ -71,10 +72,10 @@ order. A revoked link currently cannot replay its previous request.
 PLACED -> ACCEPTED -> READY -> FULFILLED, with cancellation before fulfilment.
 Expected versions prevent stale seller actions. Fulfilment and payment are
 separate dimensions. Delivered tea can remain unpaid; a payment may also require
-a refund after cancellation. A future ledger should record immutable debits,
-credits and allocations rather than overwrite an office balance without history.
+a refund after cancellation. The implemented ledger records immutable debits,
+credits and allocations rather than overwriting an office balance without history.
 
-Monthly invoice creation groups charges and must not create duplicate debt.
+Monthly statement creation now groups charges without creating duplicate debt.
 Use unique period/office invoice identity, explicit timezone/cutoff, partial
 payment allocations, due dates and reconciliation. Define tax and rounding rules
 with the business before coding them.

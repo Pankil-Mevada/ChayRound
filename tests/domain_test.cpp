@@ -19,6 +19,17 @@ int main() {
     check(!transition("CANCELLED", "ACCEPTED"));
     check(token().size() == 64);
     check(digest("a") != digest("b"));
+    check(hmac("key", "message") ==
+          "6e9ef29b75fffc5b7abae527d58fdadb2fe42e7219011976917343065f58ed4a");
+    check(nextMonth("2026-09") - monthStart("2026-09") == 30 * 86400);
+    check(nextMonth("2028-02") - monthStart("2028-02") == 29 * 86400);
+    rejected = false;
+    try {
+        monthStart("2026-13");
+    } catch (const Failure &) {
+        rejected = true;
+    }
+    check(rejected);
     Db d(":memory:");
     d.exec("CREATE TABLE t(n INTEGER)");
     {

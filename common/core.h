@@ -1,14 +1,19 @@
 #pragma once
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <crow.h>
 #include <cstdlib>
 #include <curl/curl.h>
 #include <fstream>
 #include <limits>
+#include <map>
 #include <memory>
 #include <openssl/crypto.h>
 #include <openssl/evp.h>
+#include <openssl/hmac.h>
 #include <openssl/rand.h>
+#include <regex>
 #include <sqlite3.h>
 #include <stdexcept>
 #include <string>
@@ -29,6 +34,12 @@ inline std::string env(const char *key, const std::string &fallback = "") {
     return p ? std::string(p) : fallback;
 }
 inline long long now() {
+    if (env("CHAY_TEST_FIXTURES") == "1" && !env("CHAY_TEST_CLOCK_FILE").empty()) {
+        std::ifstream clock(env("CHAY_TEST_CLOCK_FILE"));
+        long long value = 0;
+        require(bool(clock >> value) && value > 0, 500, "Invalid isolated test clock");
+        return value;
+    }
     return std::chrono::duration_cast<std::chrono::seconds>(
                std::chrono::system_clock::now().time_since_epoch())
         .count();
@@ -65,6 +76,43 @@ inline std::string password(const std::string &p, const std::string &salt) {
 inline bool equal(const std::string &a, const std::string &b) {
     return a.size() == b.size() && CRYPTO_memcmp(a.data(), b.data(), a.size()) == 0;
 }
+inline std::string hmac(const std::string &key, const std::string &message) {
+    unsigned char result[EVP_MAX_MD_SIZE];
+    unsigned length = 0;
+    require(HMAC(EVP_sha256(), key.data(), static_cast<int>(key.size()),
+                 reinterpret_cast<const unsigned char *>(message.data()), message.size(), result,
+                 &length) != nullptr,
+            500, "HMAC failed");
+    return hex(result, length);
+}
+inline std::string emailAddress(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+    require(s.size() <= 200 && std::regex_match(s, std::regex(R"([^\s@]+@[^\s@]+\.[^\s@]+)")), 400,
+            "Invalid email");
+    return s;
+}
+inline std::string optionalText(const crow::json::rvalue &j, const char *key, size_t max = 300) {
+    if (!j.has(key))
+        return "";
+    require(j[key].t() == crow::json::type::String, 400, "Expected text");
+    std::string value = j[key].s();
+    require(value.size() <= max, 400, "Text too long");
+    return value;
+}
+inline bool flag(const crow::json::rvalue &j, const char *key) {
+    require(j.has(key) &&
+                (j[key].t() == crow::json::type::True || j[key].t() == crow::json::type::False),
+            400, std::string("Expected boolean: ") + key);
+    return j[key].b();
+}
+inline std::string identifier(const std::string &s) {
+    require(
+        !s.empty() && s.size() <= 100 &&
+            std::all_of(s.begin(), s.end(),
+                        [](unsigned char c) { return std::isalnum(c) || c == '_' || c == '-'; }),
+        400, "Invalid identifier");
+    return s;
+}
 inline std::string text(const crow::json::rvalue &j, const char *k, size_t max = 120) {
     require(j.has(k) && j[k].t() == crow::json::type::String, 400,
             std::string("Missing text: ") + k);
@@ -81,7 +129,7 @@ inline long long integer(const crow::json::rvalue &j, const char *k, long long l
     return static_cast<long long>(d);
 }
 inline crow::json::rvalue body(const crow::request &r) {
-    require(r.body.size() <= 16384, 413, "Request too large");
+    require(r.body.size() <= 65536, 413, "Request too large");
     auto j = crow::json::load(r.body);
     require(j && j.t() == crow::json::type::Object, 400, "Expected JSON object");
     return j;
@@ -155,6 +203,8 @@ struct Stmt {
             return true;
         if (rc == SQLITE_DONE)
             return false;
+        if (rc == SQLITE_BUSY || rc == SQLITE_LOCKED)
+            throw Failure(503, "Database busy; retry with the same request key");
         throw std::runtime_error("Statement failed");
     }
     std::string str(int i) {
@@ -176,6 +226,27 @@ struct Transaction {
             sqlite3_exec(d.p, "ROLLBACK", nullptr, nullptr, nullptr);
     }
 };
+inline void column(Db &d, const std::string &table, const std::string &name,
+                   const std::string &definition) {
+    Stmt s(d, ("PRAGMA table_info(" + table + ")").c_str());
+    while (s.row())
+        if (s.str(1) == name)
+            return;
+    d.exec("ALTER TABLE " + table + " ADD COLUMN " + name + " " + definition);
+}
+inline void audit(Db &d, const std::string &kind, const std::string &entity,
+                  const std::string &actor, const std::string &details) {
+    Stmt s(d, "INSERT INTO audit(kind,entity,actor,details,created) VALUES(?,?,?,?,?)");
+    s.bind(1, kind).bind(2, entity).bind(3, actor).bind(4, details).bind(5, now()).row();
+}
+inline void auditSchema(Db &d) {
+    d.exec("CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,kind TEXT NOT NULL,entity TEXT "
+           "NOT NULL,actor TEXT NOT NULL,details TEXT NOT NULL,created INTEGER NOT NULL);"
+           "CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit BEGIN SELECT "
+           "RAISE(ABORT,'immutable audit'); END;"
+           "CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit BEGIN SELECT "
+           "RAISE(ABORT,'immutable audit'); END;");
+}
 inline long long total(long long price, long long qty) {
     require(price >= 1 && price <= 1000000 && qty >= 1 && qty <= 500, 400,
             "Invalid price or quantity");
@@ -199,7 +270,8 @@ inline size_t receive(char *p, size_t a, size_t b, void *ctx) {
 }
 inline HttpResult http(const std::string &url, const std::string &method = "GET",
                        const std::string &payload = "",
-                       const std::vector<std::string> &headers = {}) {
+                       const std::vector<std::string> &headers = {},
+                       const std::string &basic = "") {
     std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> c(curl_easy_init(), curl_easy_cleanup);
     require(bool(c), 503, "HTTP unavailable");
     HttpResult out;
@@ -213,10 +285,14 @@ inline HttpResult http(const std::string &url, const std::string &method = "GET"
     curl_easy_setopt(c.get(), CURLOPT_CUSTOMREQUEST, method.c_str());
     curl_easy_setopt(c.get(), CURLOPT_HTTPHEADER, list);
     curl_easy_setopt(c.get(), CURLOPT_CONNECTTIMEOUT_MS, 1000L);
-    curl_easy_setopt(c.get(), CURLOPT_TIMEOUT_MS, 4000L);
+    curl_easy_setopt(c.get(), CURLOPT_TIMEOUT_MS, 12000L);
     curl_easy_setopt(c.get(), CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(c.get(), CURLOPT_WRITEFUNCTION, receive);
     curl_easy_setopt(c.get(), CURLOPT_WRITEDATA, &out.body);
+    if (!basic.empty()) {
+        curl_easy_setopt(c.get(), CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+        curl_easy_setopt(c.get(), CURLOPT_USERPWD, basic.c_str());
+    }
     if (method != "GET") {
         curl_easy_setopt(c.get(), CURLOPT_POSTFIELDS, payload.c_str());
         curl_easy_setopt(c.get(), CURLOPT_POSTFIELDSIZE, static_cast<long>(payload.size()));
@@ -247,4 +323,30 @@ inline crow::json::rvalue remote(const std::string &path, const std::string &met
     return j;
 }
 inline int port(int fallback) { return std::stoi(env("PORT", std::to_string(fallback))); }
+inline std::string endpoint(const char *overrideKey, const std::string &normal) {
+    auto target = env(overrideKey);
+    if (target.empty())
+        return normal;
+    require(env("CHAY_TEST_FIXTURES") == "1" && target.rfind("http://127.0.0.1:", 0) == 0, 500,
+            "Provider overrides are limited to isolated loopback fixtures");
+    return target;
+}
+inline long long monthStart(const std::string &period) {
+    require(std::regex_match(period, std::regex(R"(20[0-9]{2}-(0[1-9]|1[0-2]))")), 400,
+            "Use YYYY-MM");
+    auto date = std::chrono::year(std::stoi(period.substr(0, 4))) /
+                std::chrono::month(std::stoi(period.substr(5, 2))) / 1;
+    return std::chrono::duration_cast<std::chrono::seconds>(
+               std::chrono::sys_days(date).time_since_epoch())
+               .count() -
+           19800;
+}
+inline long long nextMonth(const std::string &period) {
+    auto date = std::chrono::year(std::stoi(period.substr(0, 4))) /
+                std::chrono::month(std::stoi(period.substr(5, 2))) / 1;
+    return std::chrono::duration_cast<std::chrono::seconds>(
+               std::chrono::sys_days(date + std::chrono::months(1)).time_since_epoch())
+               .count() -
+           19800;
+}
 } // namespace cr

@@ -5,13 +5,22 @@ import secrets
 import subprocess
 import time
 import urllib.request
+import fcntl
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 def main():
-    data = ROOT / '.run'
+    data = pathlib.Path(os.environ.get('CHAY_DATA_DIR',str(ROOT / '.run'))).resolve()
     data.mkdir(exist_ok=True)
-    env = dict(os.environ, CHAY_INTERNAL_KEY=secrets.token_hex(32),
+    data.chmod(0o700)
+    lock = open(data / 'stack.lock','a')
+    fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    secret_file=data / 'internal.key'
+    if not secret_file.exists():
+        secret_file.write_text(secrets.token_hex(32))
+        secret_file.chmod(0o600)
+    env = dict(os.environ, CHAY_INTERNAL_KEY=os.environ.get('CHAY_INTERNAL_KEY',secret_file.read_text().strip()),
+               CHAY_RECONCILE_WORKER=os.environ.get('CHAY_RECONCILE_WORKER','1'),
                CHAY_FRONTEND=str(ROOT / 'frontend'))
     processes, logs = [], []
     try:
@@ -36,7 +45,7 @@ def main():
                     time.sleep(.1)
             else:
                 raise RuntimeError(f'{name} readiness timed out')
-        print('ChayRound: http://localhost:9180 — local credit-order preview. Ctrl+C stops it.', flush=True)
+        print('ChayRound: http://localhost:9180 — Razorpay Test Mode only. Ctrl+C stops it.', flush=True)
         while True:
             if any(p.poll() is not None for p in processes):
                 raise RuntimeError('A service exited; inspect .run/*.log')
@@ -55,6 +64,7 @@ def main():
                 p.wait()
         for log in logs:
             log.close()
+        lock.close()
 
 if __name__ == '__main__':
     main()

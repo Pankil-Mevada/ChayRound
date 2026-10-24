@@ -9,3 +9,4 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH="$deps" -DCROW_
 cmake --build build -j "${BUILD_JOBS:-1}"
 ctest --test-dir build --output-on-failure
 python3 tests/e2e.py
+python3 tests/migration_test.py

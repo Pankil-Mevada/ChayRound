@@ -23,9 +23,9 @@ Use `rg -n 'anchor' common services tests frontend` to find exact current lines.
 | Tenant isolation | Merchant `stall`, Order `owner`, office resolve | Owner IDs/stall IDs resolved from credentials rather than trusted JSON |
 | Service authentication | common/core.h, `internal`, `serviceKey` | Shared runtime secret for internal access; not mTLS |
 | Timeout / fail closed | common/core.h, `http`, `remote` | A failed access lookup does not bypass authorization |
-| Atomic audit events | Order `events` insertion | Mutation and event share commit; no worker/publication/immutable external audit yet |
+| Atomic audit events | Order `events`, common audit | Mutation and event share commit; immutable local audit; no broker publication or externally tamper-proof audit |
 | Frontend retry key | frontend/index.html, `chayPending`, `Idempotency-Key` | Reuse after unknown network result; changed payload generates new key |
-| Integration isolation | tests/e2e.py, `TemporaryDirectory`, `free_port` | Real local HTTP processes, disposable DBs and no payment providers |
+| Integration isolation | tests/e2e.py, tests/fixtures.py | Real local HTTP processes and separate isolated provider-contract fixtures; no external calls |
 
 ## Trace one order
 
@@ -47,3 +47,8 @@ Current HTTP handlers contain application logic and SQL. A next refactor should
 extract use cases and typed repositories when billing raises complexity, without
 changing the externally tested invariants. Avoid adding abstractions solely to
 name design patterns in an interview.
+
+Phase 1/2 extracts repository/accounting helpers into order/repository.h, billing
+into billing.h and provider/recovery into payments.h. For all financial and
+onboarding code anchors, see FINANCIAL_WORKFLOWS.md; those additions supersede
+the initial-slice examples above where behaviour has expanded.

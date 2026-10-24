@@ -1,31 +1,40 @@
-# Latest local results
+# Latest local verification
 
-Date: 24 October 2026. Environment: WSL, GCC 13.3, C++20, Debug CMake build.
+Date: 24 October 2026. WSL, GCC 13.3, C++20, Debug CMake build.
 
-| Check | Result |
+| Check | Actual result |
 | --- | --- |
-| merchant, order, gateway, domain_test build | Passed |
+| Gateway, Merchant, Order, domain_test build | Passed |
 | CTest | 1/1 passed |
-| Disposable-database HTTP integration | 32 checks passed |
-| Inline frontend JavaScript syntax | Passed with Node |
-| Browser owner -> office -> fulfilment flow | Passed with synthetic local data |
-| Browser error-log inspection after flow | No error entries returned |
+| Phase 1/2 HTTP/concurrency/provider-contract/recovery | 252 checks passed |
+| Legacy migration and repeat startup | 9 invariants passed |
+| JavaScript syntax / Python compilation | Passed |
+| Browser verification, basket, fulfilment, partial receipt and account | Passed with synthetic data |
+| Browser error-log inspection | No error entries returned |
+| Responsive width check | 375 px content / 375 px viewport |
 
-Reproduce from WSL at the project root:
+Reproduce inside WSL from the project root:
 
 ```bash
-bash scripts/build.sh
-# Or, after building:
+BUILD_JOBS=2 bash scripts/build.sh
+# Individual checks after compilation:
 ctest --test-dir build --output-on-failure
 python3 tests/e2e.py
+python3 tests/migration_test.py
+node --check frontend/app.js
 ```
 
-The build script's dependency defaults use the pre-existing sibling FoodService
-installation. See README for overrides. Integration tests start their own three
-processes on ephemeral loopback ports, use TemporaryDirectory databases, stop all
-children, and remove test data. They do not alter the running .run/ preview.
+Integration tests start isolated processes/ports with disposable databases and a
+separate email/Razorpay contract server under tests/. Worker recovery is tested
+explicitly against that server. Network response loss, concurrent requests,
+changed contacts, invalid capture/signature/amount, missing configuration, live
+key rejection, equal-time pagination and non-destructive restore are covered.
+No external provider, real email, live payment or user production data is used.
 
-The suite verifies concurrency and recoverability for this slice, not commercial
-billing, real payment handling, end-to-end delivery or production capacity. There
-is no live provider integration to test yet. Mobile browser behaviour, accessibility
-audit, load/soak tests and backup/restore drills remain pending.
+Browser QA uses tests/browser_fixture.py on separate 9280-9282 ports and temporary
+data. It is never used by normal scripts/dev.py. The real Razorpay popup is not
+tested with fixture keys; actual Test credentials and provider setup are required.
+
+These results are engineering evidence, not real-provider certification, actual
+phone testing, production capacity or a paid pilot. See the acceptance checklist
+and operations runbook for unresolved external validation.

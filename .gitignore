@@ -1,8 +1,12 @@
 build*/
-.run/
+.run*/
 *.db
 *.db-shm
 *.db-wal
 *.log
 .env
+.env.*
+*.local.json
+*.key
+backups/
 __pycache__/
