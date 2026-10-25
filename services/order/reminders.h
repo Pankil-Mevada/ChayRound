@@ -1,0 +1,9 @@
+#pragma once
+namespace orders {
+inline void reminderSchema(){Db d(path);d.exec("CREATE TABLE IF NOT EXISTS billing_reminder_runs(office_id INTEGER NOT NULL,day INTEGER NOT NULL,status INTEGER NOT NULL,next_attempt INTEGER NOT NULL,PRIMARY KEY(office_id,day));");}
+inline void runBillingReminders(){
+    struct Due{long long oid,sid,balance;};std::vector<Due> due;auto day=(now()+19800)/86400;
+    {Db d(path);Stmt s(d,"SELECT DISTINCT i.office_id,i.stall_id FROM invoices i WHERE i.due_at<? AND EXISTS(SELECT 1 FROM invoice_lines il WHERE il.invoice_id=i.id AND il.amount>COALESCE((SELECT SUM(a.amount) FROM allocations a WHERE a.debit_id=il.debit_id),0)) AND NOT EXISTS(SELECT 1 FROM billing_reminder_runs b WHERE b.office_id=i.office_id AND b.day=? AND (b.status=200 OR b.next_attempt>?)) ORDER BY i.office_id LIMIT 50");s.bind(1,now()).bind(2,day).bind(3,now());while(s.row())due.push_back({s.num(0),s.num(1),outstanding(d,s.num(0))});}
+    for(auto &o:due){int status=503;try{Json j;j["stall_id"]=o.sid;j["office_id"]=o.oid;j["body"]="Overdue account reminder: unpaid fulfilled charges INR "+std::to_string(o.balance/100)+"."+(o.balance%100<10?"0":"")+std::to_string(o.balance%100)+". Open your account for current balances. This message does not add a charge.";j["request_id"]="auto-billing-"+std::to_string(o.oid)+"-"+std::to_string(day);auto result=http(env("CHAY_MERCHANT_URL","http://127.0.0.1:9181")+"/internal/billing-reminder","POST",j.dump(),{"X-Internal-Key: "+serviceKey()});status=static_cast<int>(result.status);}catch(const std::exception&){}Db d(path);Stmt save(d,"INSERT INTO billing_reminder_runs VALUES(?,?,?,?) ON CONFLICT(office_id,day) DO UPDATE SET status=excluded.status,next_attempt=excluded.next_attempt");save.bind(1,o.oid).bind(2,day).bind(3,status).bind(4,now()+300).row();}
+}
+}

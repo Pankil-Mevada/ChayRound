@@ -19,21 +19,21 @@ int main() {
         r.set_header("Referrer-Policy", "no-referrer");
         r.set_header("X-Content-Type-Options", "nosniff");
         r.set_header("Content-Security-Policy",
-                     "default-src 'self'; script-src 'self' https://checkout.razorpay.com; "
+                     "default-src 'self'; img-src 'self' https:; script-src 'self' https://checkout.razorpay.com; "
                      "style-src 'self' 'unsafe-inline'; frame-src https://api.razorpay.com "
                      "https://checkout.razorpay.com; connect-src 'self' https://api.razorpay.com "
                      "https://checkout.razorpay.com; frame-ancestors 'none'");
         return r;
     });
     CROW_ROUTE(app, "/<string>")([](std::string name) {
-        if (name != "app.js" && name != "portal.js" && name != "styles.css")
+        if (name != "app.js" && name != "portal.js" && name != "communication.js" && name != "business.js" && name != "qrcode.js" && name != "favicon.svg" && name != "styles.css")
             return crow::response(404);
         std::ifstream f(env("CHAY_FRONTEND", "frontend") + "/" + name);
         if (!f)
             return crow::response(503, "Asset unavailable");
         std::string source((std::istreambuf_iterator<char>(f)), {});
         crow::response response(200, source);
-        response.set_header("Content-Type", name != "styles.css"
+        response.set_header("Content-Type", name == "favicon.svg" ? "image/svg+xml" : name != "styles.css"
                                                 ? "application/javascript; charset=utf-8"
                                                 : "text/css; charset=utf-8");
         response.set_header("Cache-Control", "no-store");
@@ -50,7 +50,7 @@ int main() {
                               path.rfind("orders/", 0) == 0 || path == "account" ||
                               path.rfind("accounts/", 0) == 0 || path.rfind("receipts/", 0) == 0 ||
                               path.rfind("invoices/", 0) == 0 || path.rfind("webhooks/", 0) == 0 ||
-                              path == "operations";
+                              path == "operations" || path == "business-expenses" || path.rfind("business-expenses/",0)==0 || path == "reward-rules" || path == "advance" || path == "growth-report" || path == "rounds" || path.rfind("rounds/",0)==0;
                 auto base = orders ? env("CHAY_ORDER_URL", "http://127.0.0.1:9182")
                                    : env("CHAY_MERCHANT_URL", "http://127.0.0.1:9181");
                 auto method = r.method == crow::HTTPMethod::Post ? "POST" : "GET";

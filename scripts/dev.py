@@ -26,6 +26,7 @@ def main():
         secret_file.chmod(0o600)
     env = dict(os.environ, CHAY_INTERNAL_KEY=os.environ.get('CHAY_INTERNAL_KEY',secret_file.read_text().strip()),
                CHAY_RECONCILE_WORKER=os.environ.get('CHAY_RECONCILE_WORKER','1'),
+               CHAY_RECURRING_WORKER=os.environ.get('CHAY_RECURRING_WORKER','1'),
                CHAY_FRONTEND=str(ROOT / 'frontend'))
     processes, logs = [], []
     try:
@@ -42,6 +43,7 @@ def main():
                 child_env.pop('CHAY_EMAIL_FROM', None)
             if name != 'order':
                 child_env.pop('CHAY_RAZORPAY_ACCOUNTS_FILE', None)
+                child_env.pop('CHAY_FINANCIAL_REVIEW_ID', None)
             p = subprocess.Popen([str(ROOT / 'build' / name)], env=child_env,
                                  cwd=ROOT, stdout=log, stderr=log)
             processes.append(p)

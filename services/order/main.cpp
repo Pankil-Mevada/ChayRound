@@ -1,5 +1,14 @@
 #include "billing.h"
 #include "payments.h"
+#include "growth.h"
+#include "reporting.h"
+#include "settlement.h"
+#include "advance.h"
+#include "rewards.h"
+#include "checkout.h"
+#include "reminders.h"
+#include "marketing_worker.h"
+#include "automation.h"
 using namespace cr;
 using namespace orders;
 int main() {
@@ -9,6 +18,12 @@ int main() {
     migrate();
     crow::SimpleApp app;
     billing(app);
+    growth(app);
+    reporting(app);
+    settlement(app);
+    advances(app);
+    rewards(app);
+    automation(app);
     CROW_ROUTE(app, "/health")([] {
         return handle([] {
             Db d(path);
@@ -24,7 +39,8 @@ int main() {
         return handle([&] {
             auto o = office(r);
             Db d(path);
-            Json out(o);
+            Json out;
+            for(const auto *key:{"office_id","stall_id","office_name","policy","credit_limit_paise","email","address","area","instructions","verified","email_verified","owner_approved","service_enabled","credit_enabled","version","stall_name","service_area","ordering_open","owner_verified","menu","billing_cycle"})out[key]=Json(o[key]);
             auto oid = o["office_id"].i();
             out["committed_paise"] = reserved(d, oid) + outstanding(d, oid);
             out["overdue"] = overdue(d, oid);
@@ -33,110 +49,7 @@ int main() {
     });
     CROW_ROUTE(app, "/api/orders").methods("POST"_method)([](const crow::request &r) {
         return handle([&] {
-            auto j = body(r);
-            auto key = idem(r);
-            std::map<long long, long long> quantities;
-            if (j.has("items")) {
-                require(j["items"].t() == crow::json::type::List && j["items"].size() > 0 &&
-                            j["items"].size() <= 20,
-                        400, "Basket must have 1-20 lines");
-                for (auto &line : j["items"]) {
-                    auto id = integer(line, "item_id", 1, 1000000000),
-                         qty = integer(line, "quantity", 1, 500);
-                    quantities[id] += qty;
-                    require(quantities[id] <= 500, 400, "Too many cups of one item");
-                }
-            } else
-                quantities[integer(j, "item_id", 1, 1000000000)] = integer(j, "quantity", 1, 500);
-            auto requested = optionalText(j, "payment_mode", 20),
-                 note = optionalText(j, "note", 300);
-            require(requested.empty() || requested == "PREPAID", 400,
-                    "Only explicit PREPAID override is supported");
-            std::string fingerprint = requested + ":" + note;
-            long long cups = 0;
-            for (auto &[id, qty] : quantities) {
-                fingerprint += "|" + std::to_string(id) + ":" + std::to_string(qty);
-                cups += qty;
-            }
-            require(cups <= 500, 400, "Basket exceeds 500 cups");
-            auto hash = digest(fingerprint);
-            auto o = office(r);
-            auto sid = o["stall_id"].i(), oid = o["office_id"].i();
-            Db d(path);
-            Transaction tx(d);
-            Stmt prior(d, "SELECT id,request_hash FROM orders WHERE office_id=? AND idem=?");
-            prior.bind(1, oid).bind(2, key);
-            if (prior.row()) {
-                require(prior.str(1) == hash, 409, "Request key reused for another basket");
-                auto out = orderJson(d, prior.str(0));
-                tx.commit();
-                return json(200, std::move(out));
-            }
-            require(o["verified"].b() && o["owner_verified"].b(), 403,
-                    "Verify office and owner email before ordering");
-            require(o["ordering_open"].b(), 409, "Stall is paused or outside its opening hours");
-            require(o["service_enabled"].b() && !std::string(o["address"].s()).empty() &&
-                        std::string(o["area"].s()) == std::string(o["service_area"].s()),
-                    409, "Office is outside the configured service area or service is disabled");
-            std::map<long long, std::pair<std::string, long long>> catalog;
-            for (auto &item : o["menu"])
-                if (item["available"].b())
-                    catalog[item["id"].i()] = {std::string(item["name"].s()),
-                                               item["price_paise"].i()};
-            long long amount = 0;
-            for (auto &[id, qty] : quantities) {
-                require(catalog.count(id), 409,
-                        "A basket item is unavailable or belongs to another stall");
-                amount += total(catalog[id].second, qty);
-            }
-            require(amount <= 100000000, 400, "Order value too large");
-            auto policy = requested == "PREPAID" ? "PREPAID" : std::string(o["policy"].s());
-            if (policy == "MONTHLY") {
-                require(o["credit_enabled"].b() && !overdue(d, oid), 409,
-                        "Credit is disabled or overdue; choose prepayment");
-                require(reserved(d, oid) + outstanding(d, oid) + amount <=
-                            o["credit_limit_paise"].i(),
-                        409, "Credit limit exceeded; choose prepayment");
-            } else
-                account(sid);
-            auto id = token();
-            auto first = quantities.begin();
-            Stmt insert(d,
-                        "INSERT INTO "
-                        "orders(id,stall_id,office_id,office_name,item_id,item_name,quantity,total,"
-                        "status,settlement,policy,idem,request_hash,created,address,instructions,"
-                        "policy_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
-            insert.bind(1, id)
-                .bind(2, sid)
-                .bind(3, oid)
-                .bind(4, std::string(o["office_name"].s()))
-                .bind(5, first->first)
-                .bind(6, catalog[first->first].first)
-                .bind(7, cups)
-                .bind(8, amount)
-                .bind(9, policy == "PREPAID" ? "PAYMENT_PENDING" : "PLACED")
-                .bind(10, policy == "PREPAID" ? "PAYMENT_PENDING" : "UNPAID")
-                .bind(11, policy)
-                .bind(12, key)
-                .bind(13, hash)
-                .bind(14, now())
-                .bind(15, std::string(o["address"].s()))
-                .bind(16, std::string(o["instructions"].s()) + " " + note)
-                .bind(17, o["version"].i())
-                .row();
-            for (auto &[item, qty] : quantities) {
-                Stmt line(d, "INSERT INTO order_items VALUES(?,?,?,?,?)");
-                line.bind(1, id)
-                    .bind(2, item)
-                    .bind(3, catalog[item].first)
-                    .bind(4, catalog[item].second)
-                    .bind(5, qty)
-                    .row();
-            }
-            event(d, id, policy == "PREPAID" ? "PREPAYMENT_REQUIRED" : "PLACED");
-            audit(d, "ORDER_CREATED", id, "office:" + std::to_string(oid), policy);
-            tx.commit();
-            return json(201, orderJson(d, id));
+            return placeOrder(r, office(r));
         });
     });
     CROW_ROUTE(app, "/api/orders")([](const crow::request &r) {
@@ -192,16 +105,18 @@ int main() {
                 if (target == "FULFILLED" && s.str(4) == "MONTHLY")
                     entry(d, "charge_" + id, sid, s.num(2), id, "CHARGE", s.num(3),
                           "Fulfilled tea order", actor);
+                if(target=="FULFILLED" && s.str(4)=="ADVANCE") spendAdvance(d,id,sid,s.num(2),s.num(3),actor);
                 Stmt u(d, "UPDATE orders SET status=?,fulfilled_at=CASE WHEN ?='FULFILLED' THEN ? "
                           "ELSE fulfilled_at END,settlement=CASE WHEN ?='CANCELLED' AND "
-                          "settlement='PAID' AND policy='PREPAID' THEN 'REFUND_PENDING' ELSE "
+                          "settlement='PAID' AND policy='PREPAID' THEN 'REFUND_PENDING' WHEN ?='FULFILLED' AND policy='ADVANCE' THEN 'PAID' ELSE "
                           "settlement END,version=version+1 WHERE id=? AND version=?");
                 u.bind(1, target)
                     .bind(2, target)
                     .bind(3, now())
                     .bind(4, target)
-                    .bind(5, id)
-                    .bind(6, version)
+                    .bind(5, target)
+                    .bind(6, id)
+                    .bind(7, version)
                     .row();
                 require(sqlite3_changes(d.p) == 1, 409, "Order changed");
                 event(d, id, target);
@@ -324,6 +239,7 @@ int main() {
         });
     });
     auto worker = reconciliationWorker();
+    auto rounds = recurringWorker();
     app.loglevel(crow::LogLevel::Warning)
         .bindaddr("127.0.0.1")
         .port(port(9182))

@@ -11,7 +11,7 @@ function renderStalls(){
   const box=$('stallResults'); box.replaceChildren();
   const matches=availableStalls.filter(s=>(s.name+' '+s.area).toLowerCase().includes(query));
   matches.forEach(s=>box.append(action(s.name+' · '+(s.area||'Area not set')+' · #'+s.id,()=>{
-    chosenStall=s.id; $('chosenStall').textContent=s.name;
+    showPublicStall(s.id).catch(e=>message(e.message)); chosenStall=s.id; $('chosenStall').textContent=s.name;
     $('joinOffice').hidden=false; $('joinName').focus();
   })));
   if(!matches.length)box.append(node('p','No matching stall yet. Ask your tea-stall owner to finish setting up their tea desk.'));
@@ -75,7 +75,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('stallSearch').oninput=renderStalls;
   bind('joinOffice',async()=>{
     if(!chosenStall)throw Error('Choose your tea stall first.');
-    const request=await api('access/request','POST',{stall_id:chosenStall,office_name:$('joinName').value});
+    const request=await api('access/request','POST',{stall_id:chosenStall,office_name:$('joinName').value,source:new URLSearchParams(location.search).get('source')||''});
     officeToken=request.device_token;officePin='';localStorage.setItem('chayDevice',officeToken);
     await resumeOffice();
   });

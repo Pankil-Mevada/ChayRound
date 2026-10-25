@@ -1,20 +1,41 @@
 # ChayRound implementation status
 
-Updated: 24 October 2026 (Asia/Calcutta).
+Updated: 25 October 2026 (Asia/Calcutta).
 
 ## Current milestone
 
-Default office onboarding redesigned on 24 October 2026: customers find the stall,
-request office access and receive one-time owner approval for that browser. No
-office email verification, PIN or private link is required in this flow. Returning
-on the same browser remembers access. Owner email verification remains required.
+Phases 3–5 now have software implementations for public stall pages and QR
+invitations, source tracking, repeat ordering and feedback; private office/stall
+conversations; consented recurring rounds, holidays and intake caps; additional
+settlement cycles and in-app reminders; consented campaigns and approved welcome/
+reactivation automation; reviewed advance-account controls, capped referral
+rewards, loyalty points, offers/meeting packs, branch workspaces, worker roles and
+cost-aware reporting. See docs/PHASE_3_5_ACCEPTANCE.md for exact scope and limits.
 
-Phase 1 and Phase 2 engineering workflows implemented and locally validated.
-Full phase acceptance is still pending actual-provider/device checks and the
-controlled paid pilot. No production readiness, live money collection, merchant
-settlement approval or commercial launch is claimed.
+Communication is inside ChayRound. WhatsApp is not required. Structured orders,
+status, financial records and messages remain distinct workflows; see
+[the communication guide](docs/COMMUNICATION.md).
 
-## Implemented
+This is engineering scope, not completion of the commercial phase exit gates.
+Real interviews, demand validation, provider/device checks, financial review,
+production release hardening and the paid pilot remain external acceptance work.
+Live Razorpay keys remain blocked. Advance money operations and monetary referral
+rewards require an actual recorded provider/financial review; fixtures use only a
+synthetic review ID. No online wallet top-up, pooled funds or payout service is
+claimed.
+
+The no-email/no-PIN default office flow remains: find a stall, request browser
+access, receive owner approval, return on the same browser. Owner verification
+still requires configured transactional email.
+
+## Latest verification
+
+The exact final verification record is in tests/LATEST_RESULTS.md. All new tests
+use disposable databases, synthetic identities and isolated provider contracts.
+No real emails, payments, advertising or WhatsApp messages are sent by tests.
+
+## Phase 1/2 implemented foundation (historical detail)
+
 
 - Public stall-name/area discovery without public office/contact/balance exposure.
 - Pending browser requests; owner maps each request to an office belonging to their
@@ -97,8 +118,10 @@ Builds, DBs, backups, logs and local secrets remain ignored.
 - Actual stall-phone foreground/audio/background and real delivery trials remain.
 - Controlled paid pilot, account reconciliation and collection of the app's fee
   have not occurred. Customer willingness to pay is unvalidated.
-- No unit-level inventory, GPS geofence, individual employee accounts, recurring
-  rounds, marketing, other settlement schedules, advance balances or payouts.
+- No unit-level ingredient inventory, GPS geofence or payout service. Office
+  access is shared at office level; new worker accounts apply to the stall team.
+  Recurring, marketing, settlement, advance and expansion software is described
+  in docs/PHASE_3_5_ACCEPTANCE.md; commercial acceptance remains pending.
 - No account recovery/MFA, production session/HTTPS hardening, external security
   review, sustained load test, encrypted scheduled backups or production deployment.
 - Single-writer SQLite and synchronous Merchant lookup remain explicit tradeoffs;
@@ -108,7 +131,7 @@ Builds, DBs, backups, logs and local secrets remain ignored.
 - Provider refunds created manually outside this app require an operator review;
   only the implemented full cancellation-refund workflow is locally validated.
 
-## Precise next action
+## Earlier Phase 1/2 verification and launcher history
 
 Latest change verification: C++ build and CTest 1/1 passed; 290 disposable HTTP/
 provider/concurrency/recovery checks, nine migration/restart checks and four
@@ -179,3 +202,13 @@ record real provider/device results against docs/PHASE_1_2_ACCEPTANCE.md. Run a
 small approved paid pilot and reconcile its statements/payments before marking
 the Phase 2 business exit complete. Do not replace these acceptance items with
 fixture success or move to live money collection automatically.
+
+## Precise next action for the expanded implementation
+
+Review docs/PHASE_3_5_ACCEPTANCE.md and docs/COMMUNICATION.md. Back up both service
+DBs offline before any upgrade, rebuild, and restart the private launcher. Open
+owner tools for public information, branch/team access, capacity, holidays,
+marketing consent controls and reviewed account workflows. Use a separate browser
+profile for an office. Do not activate money operations by inventing a review ID.
+Complete docs/PILOT_CHECKLIST.md with actual participants and provider evidence
+before describing any phase as commercially complete.

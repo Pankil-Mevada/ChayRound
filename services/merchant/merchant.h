@@ -17,12 +17,18 @@ CREATE TABLE IF NOT EXISTS challenges(id TEXT PRIMARY KEY,subject TEXT NOT NULL,
 CREATE INDEX IF NOT EXISTS challenges_subject ON challenges(subject,created);
 CREATE TABLE IF NOT EXISTS rate_limits(key TEXT PRIMARY KEY,start INTEGER NOT NULL,count INTEGER NOT NULL);
 )SQL");
+    column(d,"owners","business_root","INTEGER NOT NULL DEFAULT 0");
+    column(d,"owners","is_branch","INTEGER NOT NULL DEFAULT 0");
+    column(d,"sessions","principal_id","INTEGER NOT NULL DEFAULT 0");
+    d.exec("UPDATE sessions SET principal_id=owner_id WHERE principal_id=0; CREATE TABLE IF NOT EXISTS workspace_members(principal_id INTEGER NOT NULL REFERENCES owners(id),workspace_owner INTEGER NOT NULL REFERENCES owners(id),role TEXT NOT NULL,PRIMARY KEY(principal_id,workspace_owner)); INSERT OR IGNORE INTO workspace_members SELECT id,id,'OWNER' FROM owners WHERE is_branch=0;");
     column(d, "owners", "verified", "INTEGER NOT NULL DEFAULT 0");
     column(d, "stalls", "area", "TEXT NOT NULL DEFAULT ''");
     column(d, "stalls", "paused", "INTEGER NOT NULL DEFAULT 1");
     column(d, "stalls", "opens", "INTEGER NOT NULL DEFAULT 360");
     column(d, "stalls", "closes", "INTEGER NOT NULL DEFAULT 1320");
     column(d, "stalls", "days", "INTEGER NOT NULL DEFAULT 127");
+    column(d,"stalls","daily_capacity","INTEGER NOT NULL DEFAULT 10000");
+    d.exec("CREATE TABLE IF NOT EXISTS stall_holidays(stall_id INTEGER NOT NULL REFERENCES stalls(id),day INTEGER NOT NULL,PRIMARY KEY(stall_id,day));");
     column(d, "stalls", "version", "INTEGER NOT NULL DEFAULT 1");
     column(d, "menu", "available", "INTEGER NOT NULL DEFAULT 1");
     column(d, "menu", "version", "INTEGER NOT NULL DEFAULT 1");
@@ -33,8 +39,13 @@ CREATE TABLE IF NOT EXISTS rate_limits(key TEXT PRIMARY KEY,start INTEGER NOT NU
     d.exec("CREATE TABLE IF NOT EXISTS office_devices(id TEXT PRIMARY KEY,token_hash TEXT UNIQUE NOT NULL,stall_id INTEGER NOT NULL REFERENCES stalls(id),office_name TEXT NOT NULL,office_id INTEGER REFERENCES offices(id),status TEXT NOT NULL DEFAULT 'PENDING',created INTEGER NOT NULL);");
     column(d, "offices", "service_enabled", "INTEGER NOT NULL DEFAULT 1");
     column(d, "offices", "credit_enabled", "INTEGER NOT NULL DEFAULT 1");
+    column(d,"offices","acquisition_source","TEXT NOT NULL DEFAULT ''");
+    column(d, "offices", "billing_cycle", "TEXT NOT NULL DEFAULT 'MONTHLY'");
     column(d, "offices", "version", "INTEGER NOT NULL DEFAULT 1");
     column(d, "challenges", "email", "TEXT NOT NULL DEFAULT ''");
+    d.exec("CREATE TABLE IF NOT EXISTS promotions(item_id INTEGER PRIMARY KEY REFERENCES menu(id),id TEXT NOT NULL,price INTEGER NOT NULL,cost INTEGER NOT NULL,margin INTEGER NOT NULL,maximum_units INTEGER NOT NULL,budget INTEGER NOT NULL,starts INTEGER NOT NULL,ends INTEGER NOT NULL,notice INTEGER NOT NULL,paused INTEGER NOT NULL);");
+    d.exec("CREATE TABLE IF NOT EXISTS menu_costs(item_id INTEGER PRIMARY KEY REFERENCES menu(id),cost INTEGER NOT NULL);");
+    column(d,"promotions","menu_version","INTEGER NOT NULL DEFAULT 0");
     auditSchema(d);
     d.exec("PRAGMA user_version=2");
     tx.commit();
@@ -55,14 +66,23 @@ inline void throttle(Db &d, const std::string &key, long long limit, long long s
     u.bind(1, key).bind(2, start).bind(3, count + 1).row();
     tx.commit();
 }
+inline long long principal(Db &d,const crow::request &r){
+    auto auth=r.get_header_value("Authorization");require(auth.rfind("Bearer ",0)==0,401,"Sign in required");Stmt s(d,"SELECT principal_id FROM sessions WHERE hash=? AND expires>?");s.bind(1,digest(auth.substr(7))).bind(2,now());require(s.row(),401,"Session expired");return s.num(0);
+}
+inline std::string ownerCapability(const crow::request &r){
+    if(r.url.rfind("/internal/",0)==0){internal(r);return r.get_header_value("X-Owner-Capability").empty()?"READ":r.get_header_value("X-Owner-Capability");}
+    if(r.method!=crow::HTTPMethod::Post)return "READ";
+    if(r.url=="/api/workspaces/switch")return "SWITCH";
+    if(r.url=="/api/branches"||r.url=="/api/workers")return "ADMIN";
+    if(r.url.rfind("/api/conversations/",0)==0)return "COMMUNICATE";
+    return "MANAGE";
+}
 inline long long owner(Db &d, const crow::request &r, bool verified = true) {
-    auto auth = r.get_header_value("Authorization");
-    require(auth.rfind("Bearer ", 0) == 0, 401, "Sign in required");
-    Stmt s(d, "SELECT s.owner_id,o.verified FROM sessions s JOIN owners o ON o.id=s.owner_id WHERE "
-              "hash=? AND expires>?");
-    s.bind(1, digest(auth.substr(7))).bind(2, now());
-    require(s.row(), 401, "Session expired");
-    require(!verified || s.num(1), 403, "Verify your owner email first");
+    auto auth = r.get_header_value("Authorization");require(auth.rfind("Bearer ",0)==0,401,"Sign in required");
+    Stmt s(d,"SELECT s.owner_id,o.verified,m.role,s.principal_id,p.verified FROM sessions s JOIN owners o ON o.id=s.owner_id JOIN owners p ON p.id=s.principal_id JOIN workspace_members m ON m.principal_id=s.principal_id AND m.workspace_owner=s.owner_id WHERE s.hash=? AND s.expires>?");s.bind(1,digest(auth.substr(7))).bind(2,now());require(s.row(),401,"Session expired");require(!verified||(s.num(1)&&s.num(4)),403,"Verify your owner email first");auto role=s.str(2),cap=ownerCapability(r);
+    bool allowed=role=="OWNER"||(cap!="ADMIN"&&(role=="MANAGER"||cap=="READ"||cap=="SWITCH"||cap=="COMMUNICATE"||(role=="FULFILMENT"&&cap=="FULFIL")||(role=="ACCOUNTANT"&&cap=="ACCOUNT")));
+    require(allowed,403,"Your worker role does not allow this action");
+    if(r.method==crow::HTTPMethod::Post&&r.url.rfind("/internal/",0)!=0)audit(d,"WORKSPACE_ACTION",r.url,std::to_string(s.num(3)),"workspace="+std::to_string(s.num(0))+"; role="+role);
     return s.num(0);
 }
 inline long long stall(Db &d, long long uid) {
@@ -98,6 +118,8 @@ inline Json menu(Db &d, long long sid) {
         list[i]["id"] = s.num(0);
         list[i]["name"] = s.str(1);
         list[i]["price_paise"] = s.num(2);
+        Stmt promo(d,"SELECT id,price,maximum_units,notice FROM promotions WHERE item_id=? AND paused=0 AND starts<=? AND ends>? AND menu_version=?");promo.bind(1,s.num(0)).bind(2,now()).bind(3,now()).bind(4,s.num(4));
+        if(promo.row()&&promo.num(1)<=s.num(2)){list[i]["list_price_paise"]=s.num(2);list[i]["price_paise"]=promo.num(1);list[i]["promotion_id"]=promo.str(0);list[i]["maximum_units"]=promo.num(2);list[i]["notice_minutes"]=promo.num(3);}
         list[i]["available"] = bool(s.num(3));
         list[i++]["version"] = s.num(4);
     }
@@ -112,7 +134,8 @@ inline bool open(long long opens, long long closes, long long days) {
            (opens == closes || (opens < closes ? (minute >= opens && minute < closes)
                                                : (minute >= opens || minute < closes)));
 }
-inline Json officeInfo(Db &d, long long oid) {
+inline bool holiday(Db &d,long long sid){Stmt s(d,"SELECT 1 FROM stall_holidays WHERE stall_id=? AND day=?");s.bind(1,sid).bind(2,(now()+19800)/86400);return s.row();}
+inline Json officeInfo(Db &d, long long oid, bool includeCosts=false) {
     Stmt s(d, "SELECT "
               "o.stall_id,o.name,o.policy,o.credit_limit,o.email,o.address,o.area,o.instructions,o."
               "verified,o.service_enabled,o.credit_enabled,o.version,s.name,s.area,s.paused,s."
@@ -138,9 +161,13 @@ inline Json officeInfo(Db &d, long long oid) {
     j["version"] = s.num(11);
     j["stall_name"] = s.str(12);
     j["service_area"] = s.str(13);
-    j["ordering_open"] = !s.num(14) && open(s.num(15), s.num(16), s.num(17));
+    j["ordering_open"] = !s.num(14) && !holiday(d,s.num(0)) && open(s.num(15), s.num(16), s.num(17));
     j["owner_verified"] = bool(s.num(18));
+    Stmt cycle(d,"SELECT billing_cycle FROM offices WHERE id=?");cycle.bind(1,oid);cycle.row();j["billing_cycle"]=cycle.str(0);
+    Stmt capacity(d,"SELECT daily_capacity FROM stalls WHERE id=?");capacity.bind(1,s.num(0));capacity.row();j["daily_capacity"]=capacity.num(0);
     j["menu"] = menu(d, s.num(0));
+    if(includeCosts){j["internal_costs"]=Json::list();int i=0;Stmt costs(d,"SELECT m.id,COALESCE((SELECT p.cost FROM promotions p WHERE p.item_id=m.id AND p.paused=0 AND p.menu_version=m.version AND p.starts<=? AND p.ends>?),c.cost,-1) FROM menu m LEFT JOIN menu_costs c ON c.item_id=m.id WHERE m.stall_id=?");costs.bind(1,now()).bind(2,now()).bind(3,s.num(0));while(costs.row()){j["internal_costs"][i]["item_id"]=costs.num(0);j["internal_costs"][i++]["cost_paise"]=costs.num(1);}}
+
     return j;
 }
 inline std::string pinHash(const std::string &pin, const std::string &salt) {
