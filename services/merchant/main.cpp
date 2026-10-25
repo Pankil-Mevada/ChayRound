@@ -1,5 +1,10 @@
 #include "merchant.h"
 #include "portal.h"
+#include "communication.h"
+#include "campaigns.h"
+#include "workspaces.h"
+#include "promotions.h"
+#include "marketing_automation.h"
 using namespace cr;
 using namespace merchant;
 int main() {
@@ -10,6 +15,11 @@ int main() {
     crow::SimpleApp app;
     verification(app);
     portal(app);
+    communication(app);
+    campaigns(app);
+    workspaces(app);
+    promotions(app);
+    marketingAutomation(app);
     CROW_ROUTE(app, "/health")([] {
         return handle([] {
             Db d(path);
@@ -37,6 +47,7 @@ int main() {
             Stmt s(d, "INSERT INTO owners(email,salt,password) VALUES(?,?,?)");
             s.bind(1, email).bind(2, salt).bind(3, hash).row();
             auto uid = sqlite3_last_insert_rowid(d.p);
+            Stmt member(d,"INSERT INTO workspace_members VALUES(?,?,'OWNER')");member.bind(1,uid).bind(2,uid).row();
             Stmt st(d, "INSERT INTO stalls(owner_id,name) VALUES(?,?)");
             st.bind(1, uid).bind(2, name).row();
             audit(d, "OWNER_CREATED", std::to_string(uid), std::to_string(uid),
@@ -59,8 +70,8 @@ int main() {
             auto hash = password(pass, exists ? q.str(1) : std::string(64, '0'));
             require(exists && equal(hash, q.str(2)), 401, "Invalid credentials");
             auto key = token();
-            Stmt s(d, "INSERT INTO sessions VALUES(?,?,?)");
-            s.bind(1, digest(key)).bind(2, q.num(0)).bind(3, now() + 86400).row();
+            Stmt s(d, "INSERT INTO sessions(hash,owner_id,expires,principal_id) VALUES(?,?,?,?)");
+            s.bind(1, digest(key)).bind(2, q.num(0)).bind(3, now() + 86400).bind(4,q.num(0)).row();
             Json out;
             out["token"] = key;
             return json(200, std::move(out));
@@ -96,7 +107,7 @@ int main() {
             out["days"] = s.num(5);
             out["version"] = s.num(6);
             out["verified"] = bool(s.num(7));
-            out["email"] = s.str(8);
+            Stmt contact(d,"SELECT email FROM owners WHERE id=?");contact.bind(1,principal(d,r));contact.row();out["email"]=contact.str(0);
             out["menu"] = menu(d, sid);
             out["offices"] = Json::list();
             Stmt o(d, "SELECT id FROM offices WHERE stall_id=? ORDER BY id");
@@ -304,7 +315,7 @@ int main() {
             Db d(path);
             auto uid = owner(d, r);
             Json out;
-            out["owner_id"] = uid;
+            out["owner_id"] = principal(d,r);
             out["stall_id"] = stall(d, uid);
             return json(200, std::move(out));
         });
@@ -313,7 +324,7 @@ int main() {
         return handle([&] {
             internal(r);
             Db d(path);
-            return json(200, officeInfo(d, officeId(d, r)));
+            return json(200, officeInfo(d, officeId(d, r),true));
         });
     });
     CROW_ROUTE(app, "/internal/office/<int>")([](const crow::request &r, int id) {
@@ -324,7 +335,7 @@ int main() {
             Stmt s(d, "SELECT id FROM offices WHERE id=? AND stall_id=?");
             s.bind(1, id).bind(2, sid);
             require(s.row(), 404, "Office missing");
-            return json(200, officeInfo(d, id));
+            return json(200, officeInfo(d, id,true));
         });
     });
     app.loglevel(crow::LogLevel::Warning)

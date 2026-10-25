@@ -94,3 +94,17 @@ dependent. Server payment/refund recovery runs independently of the browser.
 
 Source repository: [Pankil-Mevada/ChayRound](https://github.com/Pankil-Mevada/ChayRound).
 No service is deployed, and no commercial readiness or interview outcome is guaranteed.
+
+## Growth, automation and expansion
+
+Phases 3–5 add public stall pages/QR invitations, repeat baskets, feedback,
+private office/stall conversations, recurring credit rounds, holidays/intake
+capacity, daily/weekly settlement, in-app billing reminders and opt-in campaigns,
+reviewed advance accounts, capped referral rewards, loyalty tracking, offers,
+branches, worker roles and cost-aware reporting. WhatsApp is not required.
+
+Read [implemented scope and acceptance](docs/PHASE_3_5_ACCEPTANCE.md),
+[office/stall communication](docs/COMMUNICATION.md) and the
+[pilot checklist](docs/PILOT_CHECKLIST.md) before enabling automation or money
+controls. Software checks are not evidence of real-provider or commercial launch
+acceptance. Existing Phase 1/2 workflows and the Test Mode-only payment gate remain.

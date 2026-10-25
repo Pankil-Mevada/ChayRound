@@ -17,8 +17,9 @@ inline void portal(crow::SimpleApp &app) {
             Stmt stallCheck(d,"SELECT s.id FROM stalls s JOIN owners o ON o.id=s.owner_id WHERE s.id=? AND o.verified=1");
             stallCheck.bind(1,sid); require(stallCheck.row(),404,"Stall unavailable");
             auto key=token(), id=token();
-            Stmt s(d,"INSERT INTO office_devices(id,token_hash,stall_id,office_name,created) VALUES(?,?,?,?,?)");
-            s.bind(1,id).bind(2,digest(key)).bind(3,sid).bind(4,name).bind(5,now()).row();
+            auto source=optionalText(j,"source",100);
+            Stmt s(d,"INSERT INTO office_devices(id,token_hash,stall_id,office_name,created,source) VALUES(?,?,?,?,?,?)");
+            s.bind(1,id).bind(2,digest(key)).bind(3,sid).bind(4,name).bind(5,now()).bind(6,source).row();
             Json out; out["device_token"]=key; out["status"]="PENDING";
             return json(201,std::move(out));
         });
@@ -43,13 +44,14 @@ inline void portal(crow::SimpleApp &app) {
         return handle([&] {
             auto j=body(r); auto status=text(j,"status",20); require(status=="APPROVED"||status=="REVOKED",400,"Invalid access decision");
             Db d(path); auto uid=owner(d,r), sid=stall(d,uid); Transaction tx(d);
-            Stmt existing(d,"SELECT status,office_id FROM office_devices WHERE id=? AND stall_id=?"); existing.bind(1,id).bind(2,sid);require(existing.row(),404,"Access request missing");
+            Stmt existing(d,"SELECT status,office_id,source FROM office_devices WHERE id=? AND stall_id=?"); existing.bind(1,id).bind(2,sid);require(existing.row(),404,"Access request missing");
             long long oid=0;
             if(status=="APPROVED") {
                 oid=integer(j,"office_id",1,1000000000);
                 require(existing.str(0)=="PENDING"||(existing.str(0)=="APPROVED"&&existing.num(1)==oid),409,"Create a new request to change office access");
                 Stmt officeCheck(d,"SELECT id FROM offices WHERE id=? AND stall_id=?");officeCheck.bind(1,oid).bind(2,sid);require(officeCheck.row(),404,"Office missing");
                 Stmt approve(d,"UPDATE offices SET owner_approved=1,version=version+1 WHERE id=? AND owner_approved=0");approve.bind(1,oid).row();
+                Stmt source(d,"UPDATE offices SET acquisition_source=CASE WHEN acquisition_source='' THEN ? ELSE acquisition_source END WHERE id=?");source.bind(1,existing.str(2).empty()?"direct":existing.str(2)).bind(2,oid).row();
             }
             Stmt update(d,"UPDATE office_devices SET status=?,office_id=CASE WHEN ?='APPROVED' THEN ? ELSE office_id END WHERE id=? AND stall_id=?");
             update.bind(1,status).bind(2,status).bind(3,oid).bind(4,id).bind(5,sid).row();

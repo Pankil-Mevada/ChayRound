@@ -7,9 +7,9 @@ All statuses refer to actual code, not an approved commercial release.
 | 0 | Observe stalls/offices, test a specific paid offer | Business validation pending |
 | 1 | Owner workspace, office access, menu and ordering prototype | Engineering implemented and locally verified; actual provider/device acceptance pending |
 | 2 | Prepaid/monthly billing, ledger, refunds and controlled paid pilot | Engineering implemented and locally verified; merchant/provider validation and paid pilot pending |
-| 3 | Public stall pages, invitations/QR, office leads and repeat orders | Not implemented |
-| 4 | Recurring rounds, reminders, additional settlement schedules, opt-in campaigns | Not implemented |
-| 5 | Advance balances, referrals, loyalty, branches and advanced reporting | Not implemented |
+| 3 | Public stall pages, invitations/QR, office leads and repeat orders | Software implemented; acquisition trial pending |
+| 4 | Recurring rounds, reminders, additional settlement schedules, opt-in campaigns | Software implemented with in-app communication; operational/device acceptance pending |
+| 5 | Advance balances, referrals, loyalty, branches and advanced reporting | Software implemented within documented scope; money controls review-gated; expansion acceptance pending |
 
 Multi-item orders use server prices and snapshots. Monthly offices reserve credit;
 fulfilled charges support partial receipts, allocations, statements and corrections.
@@ -28,3 +28,7 @@ Ads, printing, discounts, messaging and referral rewards have separate costs.
 The full planning documents are copied under `docs/planning/`. They are product
 intent, not evidence that a feature is implemented. Current source and
 PROJECT_STATUS.md take precedence for implementation status.
+
+See [Phase 3–5 acceptance](PHASE_3_5_ACCEPTANCE.md) for precise implemented scope,
+review gates and limitations, and [communication](COMMUNICATION.md) for the
+in-app office/stall workflow. Phase exit still requires real business evidence.

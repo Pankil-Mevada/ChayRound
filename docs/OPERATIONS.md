@@ -177,3 +177,43 @@ arrangement, target-phone audio/background behaviour, production HTTPS/session
 hardening, business onboarding, and a real paid pilot still require external
 configuration or user/operator participation. Passing local fixtures does not
 complete those acceptance items. See PHASE_1_2_ACCEPTANCE.md.
+
+## Phase 3–5 rollout and worker switches
+
+1. Stop the supervisor and take an offline backup of both service databases before
+   the additive schema upgrade. Never test against the real data directory.
+2. Rebuild and restart. Existing sessions gain their real principal identity and
+   default workspace membership during migration; offices retain their grants.
+3. Check a separate synthetic or approved pilot office before using new features.
+   Branch workspaces have separate menus/offices. Configure each stall's payment
+   Test account separately. Worker grants are branch-specific and revocable.
+4. `scripts/dev.py` defaults `CHAY_RECURRING_WORKER=1`; no automatic order exists
+   without explicit office schedule consent. Set it to `0` to stop scheduling.
+   It uses a 15-minute execution window and skips missed windows.
+5. `CHAY_BILLING_REMINDERS=1` enables automatic overdue in-app reminders.
+   `CHAY_MARKETING_AUTOMATION=1` enables approved in-app welcome/reactivation
+   processing. Both default off. Marketing additionally requires owner master
+   unpause, template unpause, approved exact text and office opt-in. Unsubscribe
+   is checked again at delivery. No external messaging provider is configured.
+6. Set `CHAY_FINANCIAL_REVIEW_ID` only to the reference of an actual completed
+   provider/financial review covering cash/bank advance records, refund rules,
+   referral liability and reconciliation. Do not use a synthetic fixture value in
+   normal operation. These controls do not enable live Razorpay, online top-ups,
+   pooled funds, bank transfers or platform payouts.
+7. After upgrade, reconcile advance top-ups minus refunds/deductions plus rewards
+   against the immutable advance ledger, active reservations and confirmed money
+   records. Referral reward funds cannot be refunded as cash. Reconcile ordinary
+   outstanding credit separately. Reverse mistaken expense entries instead of
+   deleting them, then record the corrected actual expense.
+
+Reports are all-time unless their field states a 30-day cohort. A paying source
+cohort excludes advance-funded orders to avoid counting recycled reward funds.
+Acquisition cost uses recorded source marketing spending and granted referral
+rewards divided by paying offices; zero payers yields no ratio. Costs supplied
+later do not rewrite old snapshots, so historical unknowns can make contribution
+unavailable. Contributions exclude unrecorded expenses/taxes and are not profit.
+
+The application still binds to loopback for local operation. Before a real pilot,
+configure a reviewed HTTPS deployment, operational ownership, monitoring, secure
+backup storage, restore drills and real phone/network/provider acceptance. No
+production deployment is performed by this code change.

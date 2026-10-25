@@ -29,6 +29,10 @@ CREATE TABLE IF NOT EXISTS invoice_lines(invoice_id TEXT NOT NULL REFERENCES inv
 CREATE TABLE IF NOT EXISTS webhook_events(stall_id INTEGER NOT NULL,event_id TEXT NOT NULL,created INTEGER NOT NULL,PRIMARY KEY(stall_id,event_id));
 CREATE TABLE IF NOT EXISTS command_keys(stall_id INTEGER NOT NULL,idem TEXT NOT NULL,hash TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(stall_id,idem));
 )SQL");
+    column(d,"order_items","cost_paise","INTEGER NOT NULL DEFAULT -1");
+    column(d,"order_items","list_price","INTEGER NOT NULL DEFAULT 0");
+    column(d,"order_items","promotion_id","TEXT NOT NULL DEFAULT ''");
+    column(d, "orders", "billing_cycle", "TEXT NOT NULL DEFAULT 'MONTHLY'");
     column(d, "orders", "fulfilled_at", "INTEGER NOT NULL DEFAULT 0");
     column(d, "orders", "provider_order", "TEXT NOT NULL DEFAULT ''");
     column(d, "orders", "provider_payment", "TEXT NOT NULL DEFAULT ''");
@@ -46,7 +50,7 @@ CREATE TABLE IF NOT EXISTS command_keys(stall_id INTEGER NOT NULL,idem TEXT NOT 
            "WHERE provider_order!='';"
            "CREATE UNIQUE INDEX IF NOT EXISTS provider_payment_unique ON orders(provider_payment) "
            "WHERE provider_payment!='';"
-           "INSERT OR IGNORE INTO order_items SELECT id,item_id,item_name,total/quantity,quantity "
+           "INSERT OR IGNORE INTO order_items(order_id,item_id,name,price,quantity) SELECT id,item_id,item_name,total/quantity,quantity "
            "FROM orders;");
     if (upgrade)
         d.exec("INSERT OR IGNORE INTO ledger SELECT "
@@ -66,11 +70,17 @@ CREATE TABLE IF NOT EXISTS command_keys(stall_id INTEGER NOT NULL,idem TEXT NOT 
     tx.commit();
     d.exec("PRAGMA journal_mode=WAL");
 }
+inline std::string capability(const crow::request &r){
+    if(r.method!=crow::HTTPMethod::Post)return "READ";
+    if(r.url.rfind("/api/orders/",0)==0&&r.url.find("/status")!=std::string::npos)return "FULFIL";
+    if(r.url.rfind("/api/business-expenses",0)==0||r.url.rfind("/api/accounts/",0)==0||r.url.rfind("/api/receipts/",0)==0)return "ACCOUNT";
+    return "MANAGE";
+}
 inline crow::json::rvalue merchant(const std::string &url, const crow::request &r,
                                    const std::string &method = "GET") {
     auto reply = http(env("CHAY_MERCHANT_URL", "http://127.0.0.1:9181") + url, method,
                       method == "GET" ? "" : "{}",
-                      {"X-Internal-Key: " + serviceKey(),
+                      {"X-Internal-Key: " + serviceKey(), "X-Owner-Capability: "+capability(r),
                        "Authorization: " + r.get_header_value("Authorization"),
                        "X-Office-Token: " + r.get_header_value("X-Office-Token"),
                        "X-Office-Pin: " + r.get_header_value("X-Office-Pin")});
@@ -142,7 +152,8 @@ inline bool overdue(Db &d, long long oid) {
               "i.office_id=? AND i.due_at<? AND il.amount>COALESCE((SELECT SUM(a.amount) FROM "
               "allocations a WHERE a.debit_id=il.debit_id),0) LIMIT 1");
     s.bind(1, oid).bind(2, now());
-    return s.row();
+    if(s.row())return true;
+    Stmt due(d,"SELECT 1 FROM ledger l JOIN orders o ON o.id=l.order_id WHERE l.office_id=? AND o.policy='MONTHLY' AND o.status='FULFILLED' AND l.kind IN ('CHARGE','DEBIT_ADJUSTMENT') AND l.amount>COALESCE((SELECT SUM(a.amount) FROM allocations a WHERE a.debit_id=l.id),0) AND (o.billing_cycle='AFTER_DELIVERY' OR (o.billing_cycle='DAILY' AND ((o.fulfilled_at+19800)/86400+2)*86400-19800<?)) LIMIT 1");due.bind(1,oid).bind(2,now());return due.row();
 }
 inline void updateSettlement(Db &d, const std::string &order) {
     Stmt s(d, "SELECT COALESCE(SUM(l.amount),0),COALESCE(SUM((SELECT COALESCE(SUM(a.amount),0) "

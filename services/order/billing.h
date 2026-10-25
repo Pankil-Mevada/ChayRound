@@ -6,6 +6,7 @@ inline Json accountView(Db &d, const crow::json::rvalue &o, const crow::request 
     Json j;
     j["office_id"] = oid;
     j["office_name"] = std::string(o["office_name"].s());
+    j["billing_cycle"]=std::string(o["billing_cycle"].s());
     j["outstanding_paise"] = outstanding(d, oid);
     j["reserved_paise"] = reserved(d, oid);
     j["committed_paise"] = outstanding(d, oid) + reserved(d, oid);
@@ -97,6 +98,7 @@ inline void billing(crow::SimpleApp &app) {
                     d, "SELECT id FROM receipts WHERE stall_id=? AND method=? AND reference=?");
                 duplicate.bind(1, sid).bind(2, method).bind(3, reference);
                 require(!duplicate.row(), 409, "Payment reference already recorded");
+                Stmt advance(d,"SELECT id FROM advance_entries WHERE stall_id=? AND reference=? AND kind='TOPUP'");advance.bind(1,sid).bind(2,reference);require(!advance.row(),409,"Money reference already recorded as advance funds");
                 require(amount <= outstanding(d, oid), 409,
                         "Amount exceeds unpaid fulfilled charges");
                 auto id = token();
@@ -241,7 +243,7 @@ inline void billing(crow::SimpleApp &app) {
                     .row();
                 Stmt lines(d, "INSERT INTO invoice_lines SELECT ?,l.id,l.amount FROM ledger l JOIN "
                               "orders o ON o.id=l.order_id WHERE l.office_id=? AND l.kind IN "
-                              "('CHARGE','DEBIT_ADJUSTMENT') AND o.policy='MONTHLY' AND "
+                              "('CHARGE','DEBIT_ADJUSTMENT') AND o.policy='MONTHLY' AND o.billing_cycle='MONTHLY' AND "
                               "l.created>=? AND l.created<?");
                 lines.bind(1, id).bind(2, oid).bind(3, start).bind(4, end).row();
                 audit(d, "INVOICE_ISSUED", id, "owner:" + std::to_string(who["owner_id"].i()),
